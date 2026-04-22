@@ -1,0 +1,346 @@
+========================================================
+ЧАСТЬ 0. СХЕМА
+========================================================
+
+DC1 (IPA master)    172.16.30.11   ipa1.up.local
+DC2 (IPA replica)   172.16.30.12   ipa2.up.local
+
+SRV1 (PDNS + NFS)   172.16.30.21   srv1.up.local
+SRV2 (BIND slave)   172.16.30.22   srv2.up.local
+
+Домен:
+up.local
+
+Realm:
+UP.LOCAL
+
+
+========================================================
+ЧАСТЬ 1. НАСТРОЙКА ВСЕХ СЕРВЕРОВ
+========================================================
+
+На ВСЕХ:
+
+hostnamectl set-hostname <hostname>
+
+Примеры:
+DC1: ipa1.up.local
+DC2: ipa2.up.local
+SRV1: srv1.up.local
+SRV2: srv2.up.local
+
+----------------------------------------
+
+/etc/hosts (временно, пока DNS не готов):
+
+172.16.30.11 ipa1.up.local ipa1
+172.16.30.12 ipa2.up.local ipa2
+172.16.30.21 srv1.up.local srv1
+172.16.30.22 srv2.up.local srv2
+
+----------------------------------------
+
+Время (КРИТИЧНО):
+
+dnf install -y chrony
+systemctl enable --now chronyd
+
+----------------------------------------
+
+Отключить SELinux (для старта):
+
+setenforce 0
+sed -i 's/^SELINUX=.*/SELINUX=permissive/' /etc/selinux/config
+
+
+========================================================
+ЧАСТЬ 2. PDNS MASTER (SRV1)
+========================================================
+
+Установка:
+
+dnf install -y pdns pdns-backend-bind
+
+----------------------------------------
+
+Настройка:
+
+vim /etc/pdns/pdns.conf
+
+Добавить/проверить:
+
+launch=bind
+bind-config=/etc/pdns/named.conf
+
+----------------------------------------
+
+Создать конфиг зон:
+
+vim /etc/pdns/named.conf
+
+
+zone "up.local" {
+    type master;
+    file "/etc/pdns/zones/up.local.zone";
+    allow-transfer { 172.16.30.22; };
+};
+
+zone "30.16.172.in-addr.arpa" {
+    type master;
+    file "/etc/pdns/zones/reverse.zone";
+    allow-transfer { 172.16.30.22; };
+};
+
+----------------------------------------
+
+Создать директорию:
+
+mkdir -p /etc/pdns/zones
+
+
+========================================================
+ЧАСТЬ 3. ЗОНА up.local
+========================================================
+
+vim /etc/pdns/zones/up.local.zone
+
+$TTL 86400
+@ IN SOA ipa1.up.local. admin.up.local. (
+  2026042201
+  3600
+  1800
+  604800
+  86400 )
+
+@ IN NS ipa1.up.local.
+@ IN NS ipa2.up.local.
+
+ipa1 IN A 172.16.30.11
+ipa2 IN A 172.16.30.12
+srv1 IN A 172.16.30.21
+srv2 IN A 172.16.30.22
+
+; SRV для IPA
+_ldap._tcp IN SRV 0 100 389 ipa1.up.local.
+_ldap._tcp IN SRV 0 100 389 ipa2.up.local.
+
+_kerberos._tcp IN SRV 0 100 88 ipa1.up.local.
+_kerberos._tcp IN SRV 0 100 88 ipa2.up.local.
+
+_kerberos._udp IN SRV 0 100 88 ipa1.up.local.
+_kerberos._udp IN SRV 0 100 88 ipa2.up.local.
+
+_kerberos-master._tcp IN SRV 0 100 88 ipa1.up.local.
+
+_kerberos IN TXT "UP.LOCAL"
+
+
+========================================================
+ЧАСТЬ 4. ОБРАТНАЯ ЗОНА
+========================================================
+
+vim /etc/pdns/zones/reverse.zone
+
+$TTL 86400
+@ IN SOA ipa1.up.local. admin.up.local. (
+  2026042201
+  3600
+  1800
+  604800
+  86400 )
+
+@ IN NS ipa1.up.local.
+@ IN NS ipa2.up.local.
+
+11 IN PTR ipa1.up.local.
+12 IN PTR ipa2.up.local.
+21 IN PTR srv1.up.local.
+22 IN PTR srv2.up.local.
+
+
+========================================================
+ЧАСТЬ 5. ЗАПУСК PDNS
+========================================================
+
+systemctl enable --now pdns
+
+Проверка:
+
+dig @172.16.30.21 ipa1.up.local
+dig @172.16.30.21 -t SRV _ldap._tcp.up.local
+
+
+========================================================
+ЧАСТЬ 6. BIND SLAVE (SRV2)
+========================================================
+
+dnf install -y bind
+
+vim /etc/named.conf
+
+Добавить:
+
+zone "up.local" {
+    type slave;
+    masters { 172.16.30.21; };
+    file "slaves/up.local.zone";
+};
+
+zone "30.16.172.in-addr.arpa" {
+    type slave;
+    masters { 172.16.30.21; };
+    file "slaves/reverse.zone";
+};
+
+mkdir -p /var/named/slaves
+chown named:named /var/named/slaves
+
+systemctl enable --now named
+
+
+Проверка:
+
+dig @172.16.30.22 ipa1.up.local
+
+
+========================================================
+ЧАСТЬ 7. УСТАНОВКА IPA MASTER (DC1)
+========================================================
+
+dnf install -y freeipa-server
+
+ipa-server-install \
+--domain=up.local \
+--realm=UP.LOCAL \
+--hostname=ipa1.up.local \
+--ip-address=172.16.30.11 \
+--no-dns \
+--no-ntp
+
+
+После:
+
+kinit admin
+ipa user-find
+
+
+========================================================
+ЧАСТЬ 8. IPA REPLICA (DC2)
+========================================================
+
+dnf install -y freeipa-server
+
+ipa-replica-install \
+--domain=up.local \
+--realm=UP.LOCAL \
+--server=ipa1.up.local \
+--no-dns
+
+
+Проверка:
+
+ipa-replica-manage list
+
+
+========================================================
+ЧАСТЬ 9. ПОДКЛЮЧЕНИЕ SRV1 К IPA
+========================================================
+
+dnf install -y freeipa-client
+
+ipa-client-install \
+--domain=up.local \
+--realm=UP.LOCAL \
+--server=ipa1.up.local \
+--mkhomedir
+
+
+Проверка:
+
+id admin
+
+
+========================================================
+ЧАСТЬ 10. НАСТРОЙКА NFS С KERBEROS (SRV1)
+========================================================
+
+dnf install -y nfs-utils
+
+mkdir -p /srv/nfs/share
+chmod 777 /srv/nfs/share
+
+----------------------------------------
+
+IPA сервис:
+
+kinit admin
+
+ipa service-add nfs/srv1.up.local
+
+ipa-getkeytab \
+-s ipa1.up.local \
+-p nfs/srv1.up.local \
+-k /etc/krb5.keytab
+
+chmod 600 /etc/krb5.keytab
+
+----------------------------------------
+
+Запуск:
+
+systemctl enable --now nfs-server
+
+
+========================================================
+ЧАСТЬ 11. EXPORT NFS
+========================================================
+
+vim /etc/exports
+
+/srv/nfs/share *(rw,sec=krb5p)
+
+exportfs -rav
+systemctl restart nfs-server
+
+
+========================================================
+ЧАСТЬ 12. ТЕСТ С КЛИЕНТА
+========================================================
+
+kinit admin
+
+mount -t nfs4 -o sec=krb5p srv1.up.local:/srv/nfs/share /mnt
+
+touch /mnt/test
+
+
+========================================================
+ЧАСТЬ 13. ПРОВЕРКИ
+========================================================
+
+DNS:
+dig _ldap._tcp.up.local
+
+IPA:
+ipa user-find
+
+Kerberos:
+klist
+
+NFS:
+showmount -e srv1.up.local
+
+
+========================================================
+ЧАСТЬ 14. КРИТИЧНЫЕ МОМЕНТЫ
+========================================================
+
+1. DNS должен работать ДО IPA
+2. PTR обязателен
+3. Время синхронизировано
+4. FQDN строго совпадает
+5. SRV записи обязательны
+
+========================================================
+ГОТОВО
+========================================================

@@ -16,7 +16,6 @@ table inet filter {
     # DNS к серверу
     ip daddr 172.16.30.149 udp dport 53 accept
     ip daddr 172.16.30.149 tcp dport 53 accept
-
     # DHCP
     udp dport {67,68} accept
 
@@ -42,6 +41,7 @@ table inet filter {
     # DNS из внутренних сетей
     ip saddr 172.16.30.0/24 ip daddr 172.16.30.149 udp dport 53 accept
     ip saddr 172.16.30.0/24 ip daddr 172.16.30.149 tcp dport 53 accept
+    ip saddr 10.5.10.0/24 ip daddr 172.16.30.149 tcp dport 53 accept
 
     # NTP
     ip saddr 172.16.30.0/24 ip daddr 172.16.30.148 udp dport 123 accept

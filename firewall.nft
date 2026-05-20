@@ -73,13 +73,3 @@ table inet filter {
     tcp dport {53,22} accept
   }
 }
-
-table ip nat {
-
-  chain postrouting {
-    type nat hook postrouting priority 100;
-
-    # NAT в интернет (замени интерфейс)
-    oifname "eth0" masquerade
-  }
-}

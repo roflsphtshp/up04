@@ -1,0 +1,85 @@
+
+table inet filter {
+
+  chain input {
+    type filter hook input priority 0; policy drop;
+
+    iif lo accept
+    ct state established,related accept
+
+    # ICMP (ping)
+    ip protocol icmp accept
+
+    # SSH на RTR только из mgmt и client
+    ip saddr { 172.16.30.128/26, 172.16.30.0/25 } tcp dport 22 accept
+
+    # DNS к серверу DNS
+    ip daddr 172.16.30.149 udp dport 53 accept
+    ip daddr 172.16.30.149 tcp dport 53 accept
+
+    # DHCP
+    udp dport 67 accept
+    udp dport 68 accept
+
+    # NTP к SRV
+    ip daddr 172.16.30.148 udp dport 123 accept
+
+    # WireGuard
+    udp dport 51820 accept
+  }
+
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+
+    ct state established,related accept
+
+    # mgmt ↔ client ↔ dmz разрешены
+    ip saddr 172.16.30.128/26 ip daddr 172.16.30.0/25 accept
+    ip saddr 172.16.30.128/26 ip daddr 172.16.30.192/28 accept
+
+    ip saddr 172.16.30.0/25 ip daddr 172.16.30.128/26 accept
+    ip saddr 172.16.30.0/25 ip daddr 172.16.30.192/28 accept
+
+    ip saddr 172.16.30.192/28 ip daddr 172.16.30.128/26 accept
+    ip saddr 172.16.30.192/28 ip daddr 172.16.30.0/25 accept
+
+    # client → WEB (Flask)
+    ip saddr 172.16.30.0/25 ip daddr 172.16.30.201 tcp dport 5000 accept
+
+    # DNS доступ
+    ip saddr 172.16.30.128/26 ip daddr 172.16.30.149 udp dport 53 accept
+    ip saddr 172.16.30.0/25 ip daddr 172.16.30.149 udp dport 53 accept
+    ip saddr 172.16.30.192/28 ip daddr 172.16.30.149 udp dport 53 accept
+
+    ip saddr 172.16.30.128/26 ip daddr 172.16.30.149 tcp dport 53 accept
+    ip saddr 172.16.30.0/25 ip daddr 172.16.30.149 tcp dport 53 accept
+    ip saddr 172.16.30.192/28 ip daddr 172.16.30.149 tcp dport 53 accept
+
+    # NTP
+    ip saddr 172.16.30.128/26 ip daddr 172.16.30.148 udp dport 123 accept
+    ip saddr 172.16.30.0/25 ip daddr 172.16.30.148 udp dport 123 accept
+    ip saddr 172.16.30.192/28 ip daddr 172.16.30.148 udp dport 123 accept
+  }
+
+  chain output {
+    type filter hook output priority 0; policy drop;
+
+    oif lo accept
+    ct state established,related accept
+
+    ip protocol icmp accept
+
+    udp dport {53,123,67,68,51820} accept
+    tcp dport {53,22} accept
+  }
+}
+
+table ip nat {
+
+  chain postrouting {
+    type nat hook postrouting priority 100;
+
+    # NAT в интернет (замени интерфейс)
+    oifname "eth0" masquerade
+  }
+}

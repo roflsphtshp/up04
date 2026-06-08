@@ -1,0 +1,28 @@
+table inet filter {
+    chain input {
+        type filter hook input priority filter; policy drop;
+        iif "lo" accept
+        ct state established,related accept
+        ip protocol ospf counter accept
+        ip protocol icmp counter accept
+        tcp dport 22 counter accept
+        tcp dport { 2601, 2604, 2616, 2623 } counter accept
+        tcp dport { 80, 443 } counter accept
+        udp dport 323 counter accept
+    }
+
+    chain forward {
+        type filter hook forward priority filter; policy drop;
+        ct state established,related accept
+        ip protocol ospf counter accept
+        ip protocol gre counter accept
+        ip protocol icmp counter accept
+        tcp dport { 22, 80, 443 } counter accept
+        tcp dport { 53, 88, 135, 139, 389, 445, 464, 593, 636, 3268, 3269, 5357, 5985, 9389, 47001 } counter accept
+        udp dport { 53, 88, 389, 464 } counter accept
+    }
+
+    chain output {
+        type filter hook output priority filter; policy accept;
+    }
+}

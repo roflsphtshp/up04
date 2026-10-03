@@ -1,0 +1,20 @@
+#!/bin/bash
+
+output_file="/opt/services_status.log"
+current_time=$(date +"%Y.%m.%d %H:%M:%S")
+
+echo "=== Статус сервисов от $current_time ===" >> "$output_file"
+
+# Проверка DNS-сервера (для SRV1)
+if systemctl list-unit-files | grep -q "^named.service"; then
+    dns_status=$(systemctl is-active named)
+    echo "Служба DNS (named): $dns_status" >> "$output_file"
+fi
+
+# Проверка DHCP-сервера (для SRV2)
+if systemctl list-unit-files | grep -q "^dhcpd.service"; then
+    dhcp_status=$(systemctl is-active dhcpd)
+    echo "Служба DHCP (dhcpd): $dhcp_status" >> "$output_file"
+fi
+
+echo "------------------------------------------------" >> "$output_file"

@@ -1,10 +1,10 @@
-ipa dnsrecord-add 16.172.in-addr.arpa 10.2 --ptr-rec=srv1.mon.lab.
-ipa dnsrecord-add 16.172.in-addr.arpa 20.2 --ptr-rec=srv2.mon.lab.
-ipa dnsrecord-add 16.172.in-addr.arpa 254.2 --ptr-rec=fw.mon.lab.
-ipa dnsrecord-add 16.172.in-addr.arpa 30.2 --ptr-rec=log.mon.lab.
-ipa dnsrecord-add 16.172.in-addr.arpa 99.2 --ptr-rec=admin.mon.lab.
-ipa dnsrecord-add 16.172.in-addr.arpa 40.2 --ptr-rec=mon1.mon.lab.
-ipa dnsrecord-add 16.172.in-addr.arpa 50.2 --ptr-rec=mon2.mon.lab.
+ipa dnsrecord-add mon.lab srv2 --a-rec=172.16.2.20
+ipa dnsrecord-add mon.lab fw --a-rec=172.16.2.254
+ipa dnsrecord-add mon.lab log --a-rec=172.16.2.30
+ipa dnsrecord-add mon.lab admin --a-rec=172.16.2.99
+ipa dnsrecord-add mon.lab mon1 --a-rec=172.16.2.40
+ipa dnsrecord-add mon.lab mon2 --a-rec=172.16.2.50
+ipa dnsrecord-add mon.lab syslog --cname-rec=log
 ipa dnszone-add 16.172.in-addr.arpa
 ipa dnsrecord-add 16.172.in-addr.arpa 10.2 --ptr-rec=srv1.mon.lab.
 ipa dnsrecord-add 16.172.in-addr.arpa 20.2 --ptr-rec=srv2.mon.lab.

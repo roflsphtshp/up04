@@ -1,5 +1,5 @@
 #!/bin/bash
-
+# Это вкрон таб 0 * * * * /opt/check_services.sh
 output_file="/opt/services_status.log"
 current_time=$(date +"%Y.%m.%d %H:%M:%S")
 

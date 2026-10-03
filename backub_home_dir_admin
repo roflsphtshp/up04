@@ -1,0 +1,23 @@
+#!/bin/bash
+# Это в кронтаб 0 2 * * * /opt/backup.sh
+# ================= SETTINGS =================
+TARGET_USER="user"          # Замените на имя вашего пользователя на ВМ Admin
+BACKUP_DIR="/opt/backups"   # Каталог, куда будут сохраняться бэкапы
+# ============================================
+
+# Создаем папку для бэкапов, если её нет
+mkdir -p "$BACKUP_DIR"
+
+# Формируем имя файла с текущей датой
+backup_file="${BACKUP_DIR}/${TARGET_USER}_home_$(date +%Y-%m-%d_%H%M%S).tar.gz"
+
+echo "[*] Начало резервного копирования директории /home/${TARGET_USER}..."
+
+# Создание архива
+tar -czf "$backup_file" -C /home "$TARGET_USER"
+
+if [ $? -eq 0 ]; then
+    echo "[+] Бэкап успешно создан: $backup_file"
+else
+    echo "[-] Ошибка при создании бэкапа!"
+fi

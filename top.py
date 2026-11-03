@@ -53,7 +53,7 @@ class NetworkScanner:
         return "192.168.1.0/24"
 
     def check_ports(self, ip, ports=(80, 443, 22, 445, 3389)):
-        """Проверка открытых серверных портов"""
+        """Проверка открытых портов для классификации устройств"""
         open_ports = []
         for port in ports:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -65,7 +65,7 @@ class NetworkScanner:
 
     def scan_network(self):
         hosts = []
-        # Способ 1: Nmap (быстрый ping-sweep)
+        # Способ 1: Быстрый ping-sweep через nmap (если установлен)
         try:
             cmd = ["nmap", "-sn", self.local_subnet, "-oX", "-"]
             res = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -117,23 +117,23 @@ class DrawioGenerator:
         nodes = {}
         edges = []
 
-        # 0. Облако WAN
+        # Слой 0: Внешняя сеть (Inet)
         nodes["inet"] = {"label": "Inet", "role": "cloud"}
         levels[0].append("inet")
 
-        # 1. Шлюз / Роутер
+        # Слой 1: Главный маршрутизатор (RTR)
         nodes["rtr"] = {"label": f"RTR\n{gateway_ip}", "role": "router"}
         levels[1].append("rtr")
         edges.append(("inet", "rtr", ""))
 
-        # 2. Виртуальные коммутаторы (SW-1 для серверов, SW-2 для клиентов)
-        nodes["sw1"] = {"label": "SW-1 (Servers)", "role": "switch"}
-        nodes["sw2"] = {"label": "SW-2 (Clients)", "role": "switch"}
+        # Слой 2: Коммутаторы (SW-1 для серверов, SW-2 для клиентов)
+        nodes["sw1"] = {"label": "SW-1", "role": "switch"}
+        nodes["sw2"] = {"label": "SW-2", "role": "switch"}
         levels[2].extend(["sw1", "sw2"])
         edges.append(("rtr", "sw1", ""))
         edges.append(("rtr", "sw2", ""))
 
-        # 3. Конечные узлы
+        # Слой 3: Конечные узлы
         has_servers = False
         has_clients = False
 
@@ -145,24 +145,24 @@ class DrawioGenerator:
             levels[3].append(nid)
 
             if h["role"] == "server":
-                edges.append(("sw1", nid, "VLAN 10"))
+                edges.append(("sw1", nid, ""))
                 has_servers = True
             else:
-                edges.append(("sw2", nid, "VLAN 20"))
+                edges.append(("sw2", nid, "VLan 10" if len(levels[3]) % 2 == 0 else "VLan 20"))
                 has_clients = True
 
-        # Если какая-то ветка пустая, добавляем фиктивный узел для наглядности
+        # Демо-заглушки, если сеть пустая
         if not has_servers:
-            nodes["srv_dummy"] = {"label": "SRV-1\n(Demo)", "role": "server"}
-            levels[3].insert(0, "srv_dummy")
-            edges.append(("sw1", "srv_dummy", "VLAN 10"))
+            nodes["srv1"] = {"label": "SRV-1\n(Demo)", "role": "server"}
+            levels[3].insert(0, "srv1")
+            edges.append(("sw1", "srv1", ""))
 
         if not has_clients:
-            nodes["cli_dummy"] = {"label": "CLI-1\n(Demo)", "role": "client"}
-            levels[3].append("cli_dummy")
-            edges.append(("sw2", "cli_dummy", "VLAN 20"))
+            nodes["cli1"] = {"label": "CLI-1\n(Demo)", "role": "client"}
+            levels[3].append("cli1")
+            edges.append(("sw2", "cli1", "VLan 10"))
 
-        # Создание XML
+        # Формирование Draw.io XML
         mxfile = ET.Element("mxfile", host="app.diagrams.net")
         diagram = ET.SubElement(mxfile, "diagram", name="Topology")
         model = ET.SubElement(diagram, "mxGraphModel", dx="1200", dy="900", grid="1", gridSize="10")
@@ -171,7 +171,7 @@ class DrawioGenerator:
         ET.SubElement(root, "mxCell", id="0")
         ET.SubElement(root, "mxCell", id="1", parent="0")
 
-        # Расчет иерархических координат (Tree Layout)
+        # Расчет позиций (иерархическая раскладка дерева)
         canvas_width = 1000
         base_y = 40
         y_spacing = 150
@@ -186,7 +186,7 @@ class DrawioGenerator:
                 w, h = SIZES[role]
                 x = step_x * (i + 1) - (w // 2)
 
-                # Фигура узла
+                # Фигура элемента
                 is_cloud = (role == "cloud")
                 cell = ET.SubElement(root, "mxCell", {
                     "id": nid,
@@ -195,9 +195,15 @@ class DrawioGenerator:
                     "vertex": "1",
                     "parent": "1"
                 })
-                ET.SubElement(cell, "mxGeometry", x=str(x), y=str(y), width=str(w), height=str(h), as="geometry")
+                ET.SubElement(cell, "mxGeometry", {
+                    "x": str(x),
+                    "y": str(y),
+                    "width": str(w),
+                    "height": str(h),
+                    "as": "geometry"
+                })
 
-                # Подпись под фигурой
+                # Текстовая подпись под фигурой
                 if not is_cloud:
                     lbl = ET.SubElement(root, "mxCell", {
                         "id": f"{nid}_lbl",
@@ -206,9 +212,15 @@ class DrawioGenerator:
                         "vertex": "1",
                         "parent": "1"
                     })
-                    ET.SubElement(lbl, "mxGeometry", x=str(x - 20), y=str(y + h + 6), width=str(w + 40), height="30", as="geometry")
+                    ET.SubElement(lbl, "mxGeometry", {
+                        "x": str(x - 20),
+                        "y": str(y + h + 6),
+                        "width": str(w + 40),
+                        "height": "30",
+                        "as": "geometry"
+                    })
 
-        # Связи (Edges)
+        # Построение соединений (ребер)
         for idx, (src, dst, tag) in enumerate(edges):
             edge = ET.SubElement(root, "mxCell", {
                 "id": f"edge_{idx}",
@@ -219,7 +231,10 @@ class DrawioGenerator:
                 "source": src,
                 "target": dst
             })
-            ET.SubElement(edge, "mxGeometry", relative="1", as="geometry")
+            ET.SubElement(edge, "mxGeometry", {
+                "relative": "1",
+                "as": "geometry"
+            })
 
         tree = ET.ElementTree(mxfile)
         tree.write(filename, encoding="utf-8", xml_declaration=True)
@@ -232,8 +247,8 @@ def run_tui(stdscr):
     curses.init_pair(2, curses.COLOR_GREEN, curses.COLOR_BLACK)
 
     scanner = NetworkScanner()
-    status_msg = f"Готово к работе. Обнаружена сеть: {scanner.local_subnet}"
-    
+    status_msg = f"Готово к работе. Подсеть: {scanner.local_subnet}"
+
     menu_items = [
         "1. Сканировать локальную сеть",
         "2. Посмотреть найденные хосты",
@@ -247,10 +262,10 @@ def run_tui(stdscr):
         stdscr.clear()
         h, w = stdscr.getmaxyx()
 
-        # Шапка
+        # Заголовок
         title = "=== NETWORK TOPOLOGY TO DRAW.IO SCANNER ==="
         stdscr.addstr(2, max(0, w // 2 - len(title) // 2), title, curses.A_BOLD)
-        info = f"Шлюз: {scanner.gateway_ip} | Подсеть: {scanner.local_subnet} | Хостов в базе: {len(scanner.discovered_hosts)}"
+        info = f"Шлюз: {scanner.gateway_ip} | Подсеть: {scanner.local_subnet} | Хостов: {len(scanner.discovered_hosts)}"
         stdscr.addstr(3, max(0, w // 2 - len(info) // 2), info, curses.color_pair(2))
 
         # Отрисовка пунктов меню
@@ -264,8 +279,8 @@ def run_tui(stdscr):
             else:
                 stdscr.addstr(y, x, f"   {item} ")
 
-        # Статусная строка
-        stdscr.addstr(h - 3, 2, "Состояние: " + status_msg[:w-15], curses.A_DIM)
+        # Нижняя подсказка
+        stdscr.addstr(h - 3, 2, "Состояние: " + status_msg[:w - 15], curses.A_DIM)
         stdscr.addstr(h - 2, 2, "Навигация: [↑/↓] Выбор, [Enter] Подтвердить", curses.A_DIM)
         stdscr.refresh()
 
@@ -276,7 +291,7 @@ def run_tui(stdscr):
         elif key == curses.KEY_DOWN:
             current_row = (current_row + 1) % len(menu_items)
         elif key in [curses.KEY_ENTER, 10, 13]:
-            # 1. Сканировать
+            # 1. Сканирование
             if current_row == 0:
                 status_msg = "Сканирование подсети... Пожалуйста, подождите."
                 stdscr.addstr(h - 3, 2, "Состояние: " + status_msg, curses.A_BOLD)
@@ -284,26 +299,27 @@ def run_tui(stdscr):
                 hosts = scanner.scan_network()
                 status_msg = f"Сканирование завершено. Найдено узлов: {len(hosts)}"
 
-            # 2. Список хостов
+            # 2. Просмотр списка хостов
             elif current_row == 1:
                 stdscr.clear()
                 stdscr.addstr(2, 2, "Список обнаруженных устройств:", curses.A_BOLD)
                 if not scanner.discovered_hosts:
-                    stdscr.addstr(4, 4, "Хосты не найдены. Сначала запустите сканирование.")
+                    stdscr.addstr(4, 4, "Список пуст. Сначала выполните пункт '1. Сканировать'.")
                 else:
-                    for i, hst in enumerate(scanner.discovered_hosts[:h-8]):
-                        stdscr.addstr(4 + i, 4, f"{hst['ip']:<16} | Тип: {hst['role'].upper():<8} | Имя: {hst['label'].replace(chr(10), ' ')}")
-                
+                    for i, hst in enumerate(scanner.discovered_hosts[:h - 8]):
+                        label_clean = hst['label'].replace('\n', ' ')
+                        stdscr.addstr(4 + i, 4, f"{hst['ip']:<16} | Тип: {hst['role'].upper():<8} | Имя: {label_clean}")
+
                 stdscr.addstr(h - 2, 2, "Нажмите любую клавишу для возврата...", curses.A_DIM)
                 stdscr.refresh()
                 stdscr.getch()
 
-            # 3. Изменить подсеть
+            # 3. Изменение подсети
             elif current_row == 2:
                 curses.echo()
                 curses.curs_set(1)
                 stdscr.clear()
-                stdscr.addstr(3, 4, "Введите новую подсеть (например, 192.168.0.0/24): ")
+                stdscr.addstr(3, 4, "Введите подсеть (например, 192.168.1.0/24): ")
                 stdscr.refresh()
                 sub = stdscr.getstr(4, 4, 30).decode('utf-8').strip()
                 if sub:
@@ -312,20 +328,18 @@ def run_tui(stdscr):
                 curses.noecho()
                 curses.curs_set(0)
 
-            # 4. Экспорт Draw.io
+            # 4. Генерация Draw.io
             elif current_row == 3:
                 if not scanner.discovered_hosts:
-                    # Если еще не сканировали, выполняем быстрое обнаружение
                     scanner.scan_network()
 
                 filename = "topology.drawio"
                 out = DrawioGenerator.build(scanner.discovered_hosts, scanner.gateway_ip, filename)
-                status_msg = f"Схема успешно сохранена в файл: {os.path.abspath(out)}"
+                status_msg = f"Файл сохранен: {os.path.abspath(out)}"
 
             # 5. Выход
             elif current_row == 4:
                 break
-
 
 if __name__ == "__main__":
     curses.wrapper(run_tui)
